@@ -32,7 +32,7 @@ func Build(today weather.DaySummary, history []weather.DaySummary) Advice {
 
 	// Base layer from the warmest part of the day, outer layer from the coolest.
 	a.Wear = append(a.Wear, baseLayer(today.FeelsMax))
-	if outer := outerLayer(today.FeelsMin); outer != "" {
+	if outer := outerLayer(today.FeelsMin, today.RainChance); outer != "" {
 		a.Wear = append(a.Wear, outer)
 	}
 	if swing := today.FeelsMax - today.FeelsMin; swing >= 7 {
@@ -77,14 +77,20 @@ func baseLayer(feelsMax float64) string {
 	}
 }
 
-func outerLayer(feelsMin float64) string {
+func outerLayer(feelsMin float64, rainChance int) string {
+	scarf := ""
+	if rainChance < 30 {
+		scarf = " and a scarf"
+	}
 	switch {
-	case feelsMin < 12:
-		return fmt.Sprintf("Morning/night feels like %.0f°: heavy jacket for the commute.", feelsMin)
-	case feelsMin < 17:
-		return fmt.Sprintf("Morning/night feels like %.0f°: bring a jacket.", feelsMin)
-	case feelsMin < 21:
-		return fmt.Sprintf("Morning/night feels like %.0f°: a light layer helps.", feelsMin)
+	case feelsMin < 13:
+		return fmt.Sprintf("Morning/night feels like %.0f°: heavy jacket%s for the commute.", feelsMin, scarf)
+	case feelsMin < 18:
+		return fmt.Sprintf("Morning/night feels like %.0f°: wind resistant jacket%s.", feelsMin, scarf)
+	case feelsMin < 22:
+		return fmt.Sprintf("Morning/night feels like %.0f°: suit jacket.", feelsMin)
+	case feelsMin < 24:
+		return fmt.Sprintf("Morning/night feels like %.0f°: shirt.", feelsMin)
 	}
 	return ""
 }
