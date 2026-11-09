@@ -12,7 +12,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          go-version: '1.27'
       - run: go vet ./...
       - run: go test ./...
 
@@ -29,7 +29,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Scan image for vulnerabilities
+      # Always produce a human-readable report, pass or fail, before the gate below can stop the job.
+      - name: Generate vulnerability report (HTML)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: morningbrief:scan
+          format: template
+          template: '@/contrib/html.tpl'
+          output: trivy-report.html
+
+      - name: Upload vulnerability report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-report
+          path: trivy-report.html
+
+      - name: Fail build on HIGH/CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: morningbrief:scan
