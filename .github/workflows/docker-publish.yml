@@ -29,13 +29,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # trivy-action only installs the trivy binary, not the full image, so
+      # /contrib/html.tpl (bundled in the aquasec/trivy container) isn't
+      # available here — fetch the same template from the trivy repo instead.
+      - name: Fetch HTML report template
+        run: curl -sSLo html.tpl https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl
+
       # Always produce a human-readable report, pass or fail, before the gate below can stop the job.
       - name: Generate vulnerability report (HTML)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: morningbrief:scan
           format: template
-          template: '@/contrib/html.tpl'
+          template: '@html.tpl'
           output: trivy-report.html
 
       - name: Upload vulnerability report
