@@ -1,0 +1,7 @@
+.git
+.env
+.env.example
+data/
+testdata/
+/morningbrief
+README.md
