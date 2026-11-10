@@ -29,12 +29,12 @@ type Email struct {
 // WeatherSection builds the weather + what-to-wear section.
 func WeatherSection(today weather.DaySummary, history []weather.DaySummary, a advice.Advice) (Section, error) {
 	var tb strings.Builder
-	fmt.Fprintf(&tb, "%s  %s\n", today.Place, today.Date)
-	fmt.Fprintf(&tb, "Temp %.0f–%.0f°C, feels like %.0f–%.0f°C, humidity ~%d%%, rain up to %d%%\n",
-		today.TempMin, today.TempMax, today.FeelsMin, today.FeelsMax, today.HumidityAvg, today.RainChance)
+	fmt.Fprintf(&tb, "%s\n", today.Date)
+	fmt.Fprintf(&tb, "Temp %s°C, feels like %s°C, humidity %d%%, rain up to %d%%\n",
+		weather.TempRange(today.TempMin, today.TempMax), weather.TempRange(today.FeelsMin, today.FeelsMax), today.HumidityAvg, today.RainChance)
 	for _, p := range today.Periods {
-		fmt.Fprintf(&tb, "  %s  %.0f–%.0f°C (feels %.0f–%.0f)  rain %d%%  %s\n",
-			p.Name, p.TempMin, p.TempMax, p.FeelsMin, p.FeelsMax, p.RainChance, p.Condition)
+		fmt.Fprintf(&tb, "  %s  %s°C (feels %s)  rain %d%%  %s\n",
+			p.Name, weather.TempRange(p.TempMin, p.TempMax), weather.TempRange(p.FeelsMin, p.FeelsMax), p.RainChance, p.Condition)
 	}
 	tb.WriteString("\nWhat to wear\n")
 	for _, s := range a.Wear {
@@ -53,8 +53,8 @@ func WeatherSection(today weather.DaySummary, history []weather.DaySummary, a ad
 	if len(history) > 0 {
 		tb.WriteString("\nLast days (temp / feels-like / rain)\n")
 		for _, h := range history[:min(len(history), 7)] {
-			fmt.Fprintf(&tb, "  %s  %.0f–%.0f°  %.0f–%.0f°  %d%%\n",
-				h.Date, h.TempMin, h.TempMax, h.FeelsMin, h.FeelsMax, h.RainChance)
+			fmt.Fprintf(&tb, "  %s  %s°  %s°  %d%%\n",
+				h.Date, weather.TempRange(h.TempMin, h.TempMax), weather.TempRange(h.FeelsMin, h.FeelsMax), h.RainChance)
 		}
 	}
 
@@ -82,19 +82,19 @@ func Compose(subject string, sections []Section) (Email, error) {
 }
 
 var funcs = template.FuncMap{
-	"f0": func(v float64) string { return fmt.Sprintf("%.0f", v) },
+	"rng": weather.TempRange,
 }
 
 // Email clients ignore <style> blocks inconsistently, so styles are inline.
 var weatherTmpl = template.Must(template.New("w").Funcs(funcs).Parse(`
-<p style="margin:0 0 4px;color:#666">{{.T.Place}} · {{.T.Date}}</p>
-<p style="margin:0 0 12px;font-size:28px;font-weight:600">{{f0 .T.TempMin}}–{{f0 .T.TempMax}}°C
- <span style="font-size:15px;font-weight:400;color:#555">feels {{f0 .T.FeelsMin}}–{{f0 .T.FeelsMax}}° · humidity ~{{.T.HumidityAvg}}% · rain ≤{{.T.RainChance}}%</span></p>
+<p style="margin:0 0 4px;color:#666">{{.T.Date}}</p>
+<p style="margin:0 0 12px;font-size:28px;font-weight:600">{{rng .T.TempMin .T.TempMax}}°C
+ <span style="font-size:15px;font-weight:400;color:#555">feels {{rng .T.FeelsMin .T.FeelsMax}}° · humidity {{.T.HumidityAvg}}% · rain {{.T.RainChance}}%</span></p>
 <table style="border-collapse:collapse;font-size:14px;margin-bottom:12px">
 {{range .T.Periods}}<tr>
  <td style="padding:3px 10px 3px 0">{{.Name}}</td>
- <td style="padding:3px 10px">{{f0 .TempMin}}–{{f0 .TempMax}}°</td>
- <td style="padding:3px 10px;color:#666">feels {{f0 .FeelsMin}}–{{f0 .FeelsMax}}°</td>
+ <td style="padding:3px 10px">{{rng .TempMin .TempMax}}°</td>
+ <td style="padding:3px 10px;color:#666">feels {{rng .FeelsMin .FeelsMax}}°</td>
  <td style="padding:3px 10px">☂ {{.RainChance}}%</td>
  <td style="padding:3px 0 3px 10px">{{.Condition}}</td>
 </tr>{{end}}
@@ -108,7 +108,7 @@ var weatherTmpl = template.Must(template.New("w").Funcs(funcs).Parse(`
 {{if .H}}<h3 style="margin:12px 0 4px;font-size:15px">Last days</h3>
 <table style="border-collapse:collapse;font-size:13px;color:#444">
 <tr style="color:#888"><td style="padding:2px 10px 2px 0">Date</td><td style="padding:2px 10px">Temp</td><td style="padding:2px 10px">Feels</td><td style="padding:2px 10px">Rain</td></tr>
-{{range .H}}<tr><td style="padding:2px 10px 2px 0">{{.Date}}</td><td style="padding:2px 10px">{{f0 .TempMin}}–{{f0 .TempMax}}°</td><td style="padding:2px 10px">{{f0 .FeelsMin}}–{{f0 .FeelsMax}}°</td><td style="padding:2px 10px">{{.RainChance}}%</td></tr>{{end}}
+{{range .H}}<tr><td style="padding:2px 10px 2px 0">{{.Date}}</td><td style="padding:2px 10px">{{rng .TempMin .TempMax}}°</td><td style="padding:2px 10px">{{rng .FeelsMin .FeelsMax}}°</td><td style="padding:2px 10px">{{.RainChance}}%</td></tr>{{end}}
 </table>{{end}}
 `))
 

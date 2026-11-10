@@ -3,6 +3,7 @@
 package weather
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"time"
@@ -236,4 +237,13 @@ func avg(vs []float64) float64 {
 		sum += v
 	}
 	return sum / float64(len(vs))
+}
+
+// TempRange prints "19" when low and high round the same, else "18–24".
+func TempRange(lo, hi float64) string {
+	a, b := fmt.Sprintf("%.0f", lo), fmt.Sprintf("%.0f", hi)
+	if a == b {
+		return a
+	}
+	return a + "–" + b
 }
