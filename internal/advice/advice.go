@@ -11,6 +11,25 @@ import (
 	"morningbrief/internal/weather"
 )
 
+// shortDate turns "2026-11-05" into "11/05".
+func shortDate(date string) string {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return date
+	}
+	return t.Format("01/02")
+}
+
+// feelsDetail spells out the actual feels-like numbers, e.g. "high 20° vs 27°".
+// The low is added only when it moved differently from the high.
+func feelsDetail(today, prev weather.DaySummary) string {
+	d := fmt.Sprintf("high %.0f° vs %.0f°", today.FeelsMax, prev.FeelsMax)
+	if math.Round(today.FeelsMax-prev.FeelsMax) != math.Round(today.FeelsMin-prev.FeelsMin) {
+		d += fmt.Sprintf(", low %.0f° vs %.0f°", today.FeelsMin, prev.FeelsMin)
+	}
+	return d
+}
+
 func dayBefore(date string) string {
 	t, err := time.Parse("2006-01-02", date)
 	if err != nil {
@@ -117,20 +136,24 @@ func compare(today weather.DaySummary, history []weather.DaySummary) []string {
 	}
 	var out []string
 	y := history[0]
-	label := "yesterday"
+	label, than := "yesterday", "yesterday"
 	if y.Date != dayBefore(today.Date) {
-		label = "last stored day (" + y.Date + ")"
+		label = shortDate(y.Date)
+		than = "on " + label
 	}
 
 	dMax := today.FeelsMax - y.FeelsMax
 	dMin := today.FeelsMin - y.FeelsMin
+	detail := feelsDetail(today, y)
 	switch {
 	case dMax <= -3 || dMin <= -3:
-		out = append(out, fmt.Sprintf("Colder than %s (feels-like high %+.0f°, low %+.0f°) — add a layer vs what you wore.", label, dMax, dMin))
+		out = append(out, fmt.Sprintf("Today feels %.0f° colder than %s (%s). Wear one more layer than %s.",
+			-math.Min(dMax, dMin), label, detail, than))
 	case dMax >= 3 || dMin >= 3:
-		out = append(out, fmt.Sprintf("Warmer than %s (feels-like high %+.0f°, low %+.0f°) — go a layer lighter.", label, dMax, dMin))
+		out = append(out, fmt.Sprintf("Today feels %.0f° warmer than %s (%s). You can wear one layer less than %s.",
+			math.Max(dMax, dMin), label, detail, than))
 	default:
-		out = append(out, fmt.Sprintf("About the same as %s (feels-like high %+.0f°, low %+.0f°) — same outfit works.", label, dMax, dMin))
+		out = append(out, fmt.Sprintf("Today feels about the same as %s (%s). The same outfit works.", label, detail))
 	}
 	if today.RainChance >= 50 && y.RainChance < 30 {
 		out = append(out, fmt.Sprintf("Wetter than %s.", label))
@@ -157,7 +180,7 @@ func compare(today weather.DaySummary, history []weather.DaySummary) []string {
 }
 
 func headline(today weather.DaySummary, history []weather.DaySummary) string {
-	h := fmt.Sprintf("%.0f–%.0f°C", today.TempMin, today.TempMax)
+	h := weather.TempRange(today.TempMin, today.TempMax) + "°C"
 	if len(today.Conditions) > 0 {
 		h += " " + today.Conditions[0]
 	}
