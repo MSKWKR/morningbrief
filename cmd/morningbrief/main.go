@@ -147,7 +147,7 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string) er
 	}
 
 	subject := fmt.Sprintf("Morning brief %s · %s", today.Format("01/02 Mon"), headlines[0])
-	email, err := report.Compose(subject, sections)
+	email, err := report.Compose(subject, today, sections)
 	if err != nil {
 		return err
 	}
