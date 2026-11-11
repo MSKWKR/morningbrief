@@ -1,6 +1,7 @@
 FROM golang:1.27.3-alpine3.24 AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /app/morningbrief ./cmd/morningbrief
@@ -18,5 +19,12 @@ ENV TZ=Asia/Taipei
 WORKDIR /app
 COPY --from=build /app/morningbrief /app/morningbrief
 COPY deploy/crontab /app/crontab
+
+# Run as an unprivileged user: the job parses untrusted web pages, so a bug
+# in a parser must not run as root. /app stays root-owned and read-only to
+# this user; only the mounted DATA_DIR needs to be writable (chown it to
+# 10001 on the host). Numeric IDs let runAsNonRoot checks verify it.
+RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+USER 10001:10001
 
 ENTRYPOINT ["/usr/local/bin/supercronic", "/app/crontab"]
