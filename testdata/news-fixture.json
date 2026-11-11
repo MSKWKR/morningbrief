@@ -1,0 +1,34 @@
+[
+  {
+    "title": "SQLite 4.0 released with a new storage engine",
+    "url": "https://example.com/sqlite-4-released",
+    "discussion_url": "https://news.ycombinator.com/item?id=41000001",
+    "points": 812,
+    "comments": 304,
+    "summary": "The SQLite project has shipped version 4.0, which replaces its long-standing storage layer with a log-structured engine. Maintainers say write throughput improves substantially while the file format stays readable by older tools."
+  },
+  {
+    "title": "A deep dive into how modern CPUs predict branches",
+    "url": "https://example.org/branch-prediction-deep-dive",
+    "discussion_url": "https://news.ycombinator.com/item?id=41000002",
+    "points": 430,
+    "comments": 127,
+    "summary": "An engineer walks through the techniques current processors use to guess which way a branch will go, from simple counters to neural-style predictors. The piece explains why mispredictions are costly and how code layout can reduce them."
+  },
+  {
+    "title": "Ask HN: What are you using for personal backups?",
+    "url": "https://news.ycombinator.com/item?id=41000003",
+    "discussion_url": "https://news.ycombinator.com/item?id=41000003",
+    "points": 215,
+    "comments": 188,
+    "summary": "The poster asks readers which tools they trust for personal backups. Replies compare snapshot-based tools, cloud storage and offline drives, with many stressing the need to test restores regularly."
+  },
+  {
+    "title": "City council approves new bike lane network",
+    "url": "https://example.net/city-bike-lanes",
+    "discussion_url": "https://news.ycombinator.com/item?id=41000004",
+    "points": 96,
+    "comments": 41,
+    "summary": ""
+  }
+]
