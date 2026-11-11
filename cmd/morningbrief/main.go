@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -18,9 +19,13 @@ import (
 
 	"morningbrief/internal/advice"
 	"morningbrief/internal/cwa"
+	"morningbrief/internal/fetch"
+	"morningbrief/internal/hn"
 	"morningbrief/internal/mailer"
+	"morningbrief/internal/news"
 	"morningbrief/internal/report"
 	"morningbrief/internal/store"
+	"morningbrief/internal/summarize"
 	"morningbrief/internal/weather"
 )
 
@@ -39,6 +44,8 @@ type config struct {
 	gmailUser     string
 	gmailPass     string
 	mailTo        []string
+	anthropicKey  string // optional: without it the news section is skipped
+	newsModel     string
 }
 
 func env(key, def string) string {
@@ -77,10 +84,12 @@ func parsePlaces(defaultCity, list string) ([]place, error) {
 
 func loadConfig(districtFlag string) (config, error) {
 	c := config{
-		cwaKey:    env("CWA_API_KEY", ""),
-		dataDir:   env("DATA_DIR", "./data"),
-		gmailUser: env("GMAIL_USER", ""),
-		gmailPass: strings.ReplaceAll(env("GMAIL_APP_PASSWORD", ""), " ", ""),
+		cwaKey:       env("CWA_API_KEY", ""),
+		dataDir:      env("DATA_DIR", "./data"),
+		gmailUser:    env("GMAIL_USER", ""),
+		gmailPass:    strings.ReplaceAll(env("GMAIL_APP_PASSWORD", ""), " ", ""),
+		anthropicKey: env("ANTHROPIC_API_KEY", ""),
+		newsModel:    env("NEWS_MODEL", "claude-haiku-5-5"),
 	}
 	districts := env("DISTRICTS", "內湖區") // 葫洲里 is in 內湖區
 	if districtFlag != "" {
@@ -109,14 +118,16 @@ func main() {
 	fixture := flag.String("fixture", "", "read the CWA response from this file instead of calling the API")
 	dateFlag := flag.String("date", "", "pretend today is YYYY-MM-DD (for testing)")
 	htmlOut := flag.String("html-out", "", "with -dry-run, also write the HTML email to this file")
+	noNews := flag.Bool("no-news", false, "skip the tech news section entirely")
+	newsFixture := flag.String("news-fixture", "", "read tech news items from this file instead of Hacker News and the API")
 	flag.Parse()
 
-	if err := run(*district, *dryRun, *fixture, *dateFlag, *htmlOut); err != nil {
+	if err := run(*district, *dryRun, *fixture, *dateFlag, *htmlOut, *noNews, *newsFixture); err != nil {
 		log.Fatal(err) // prints the error and exits with status 1, so cron can notice
 	}
 }
 
-func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string) error {
+func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string, noNews bool, newsFixture string) error {
 	cfg, err := loadConfig(districtFlag)
 	if err != nil {
 		return err
@@ -146,6 +157,18 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string) er
 		headlines = append(headlines, p.district+" "+headline)
 	}
 
+	// News is best-effort: it is built only after the weather succeeded, and
+	// whatever goes wrong here must not stop the weather email.
+	var newsReason string // non-empty when the news section was unavailable
+	if !noNews {
+		sec, reason, err := buildNews(cfg, newsFixture)
+		if err != nil {
+			return err
+		}
+		sections = append(sections, sec)
+		newsReason = reason
+	}
+
 	subject := fmt.Sprintf("Morning brief %s · %s", today.Format("01/02 Mon"), headlines[0])
 	email, err := report.Compose(subject, sections)
 	if err != nil {
@@ -157,9 +180,11 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string) er
 		fmt.Println()
 		fmt.Print(email.Text)
 		if htmlOut != "" {
-			return os.WriteFile(htmlOut, []byte(email.HTML), 0o644)
+			if err := os.WriteFile(htmlOut, []byte(email.HTML), 0o644); err != nil {
+				return err
+			}
 		}
-		return nil
+		return newsUnavailable(newsReason)
 	}
 	if cfg.gmailUser == "" || cfg.gmailPass == "" {
 		return fmt.Errorf("GMAIL_USER and GMAIL_APP_PASSWORD must be set (or use -dry-run)")
@@ -168,8 +193,59 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string) er
 	if err := g.Send(cfg.mailTo, email.Subject, email.Text, email.HTML); err != nil {
 		return err
 	}
-	log.Printf("sent to %s", strings.Join(cfg.mailTo, ", "))
-	return nil
+	recipients := strings.Join(cfg.mailTo, ", ")
+	log.Printf("sent to %s", recipients)
+	return newsUnavailable(newsReason)
+}
+
+// newsUnavailable turns a missing news section into an error. It is returned
+// only after the mail is sent (or printed), so main exits 1 and cron notices.
+func newsUnavailable(reason string) error {
+	if reason == "" {
+		return nil
+	}
+	return fmt.Errorf("news unavailable: %s", reason)
+}
+
+// buildNews returns the news section. If news could not be produced it returns
+// the "unavailable" note plus the reason; only a bad -news-fixture is an error.
+func buildNews(cfg config, newsFixture string) (report.Section, string, error) {
+	var items []report.NewsItem
+	var err error
+	switch {
+	case newsFixture != "":
+		// Developer flag: a broken fixture is a real error, not a soft failure.
+		if items, err = news.LoadFixture(newsFixture); err != nil {
+			return report.Section{}, "", fmt.Errorf("-news-fixture: %w", err)
+		}
+	case cfg.anthropicKey == "":
+		return report.NewsUnavailableSection("ANTHROPIC_API_KEY not set"), "ANTHROPIC_API_KEY not set", nil
+	default:
+		p := news.Pipeline{
+			Lister:     hn.New(),
+			Fetcher:    fetch.New(),
+			Summarizer: summarize.New(cfg.anthropicKey, cfg.newsModel),
+			Pause:      time.Second,
+			Logf:       log.Printf,
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		if items, err = p.Run(ctx); err != nil {
+			reason := "internal error"
+			var ue *news.UnavailableError
+			if errors.As(err, &ue) {
+				reason = ue.Reason
+			}
+			log.Printf("news: %v", err)
+			return report.NewsUnavailableSection(reason), reason, nil
+		}
+	}
+	sec, err := report.NewsSection(items)
+	if err != nil {
+		log.Printf("news: %v", err)
+		return report.NewsUnavailableSection("could not render news"), "could not render news", nil
+	}
+	return sec, "", nil
 }
 
 // placeSection fetches, stores and renders one district.
