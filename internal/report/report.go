@@ -75,7 +75,13 @@ func Compose(subject string, sections []Section) (Email, error) {
 		tb.WriteString("== " + s.Title + " ==\n" + s.Text + "\n")
 	}
 	var hb bytes.Buffer
-	if err := pageTmpl.Execute(&hb, map[string]any{"Subject": subject, "Sections": sections}); err != nil {
+	hasNews := false
+	for _, s := range sections {
+		if s.Title == newsTitle {
+			hasNews = true
+		}
+	}
+	if err := pageTmpl.Execute(&hb, map[string]any{"Subject": subject, "Sections": sections, "HasNews": hasNews}); err != nil {
 		return Email{}, err
 	}
 	return Email{Subject: subject, Text: tb.String(), HTML: hb.String()}, nil
@@ -117,5 +123,5 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!DOCTYPE html>
 <body style="font-family:-apple-system,'Segoe UI','Noto Sans TC',sans-serif;color:#222;max-width:640px;margin:0 auto;padding:16px">
 {{range .Sections}}<h2 style="font-size:18px;border-bottom:1px solid #ddd;padding-bottom:4px">{{.Title}}</h2>
 {{.HTML}}{{end}}
-<p style="margin-top:24px;font-size:12px;color:#999">Source: 中央氣象署 Open Data (F-D0047)</p>
+<p style="margin-top:24px;font-size:12px;color:#999">{{if .HasNews}}Sources: 中央氣象署 Open Data (F-D0047) · Hacker News{{else}}Source: 中央氣象署 Open Data (F-D0047){{end}}</p>
 </body></html>`))

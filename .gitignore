@@ -4,3 +4,5 @@
 /data/
 *.test
 .DS_Store
+# Written by deploy/scan.sh
+trivy-report.html
