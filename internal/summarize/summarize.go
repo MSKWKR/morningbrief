@@ -38,9 +38,12 @@ var (
 )
 
 const (
-	maxTitleRunes   = 300
-	maxTextRunes    = 12000
-	maxSummaryRunes = 400
+	maxTitleRunes = 300
+	maxTextRunes  = 12000
+	// Hard cap that catches runaway output. The prompt asks for much less
+	// (about 300 characters); 2-3 sentences often land at 400-500, and
+	// rejecting a good summary for that would drop the story to title-only.
+	maxSummaryRunes = 700
 	maxTokens       = 8000 // thinking shares this budget
 )
 
@@ -85,7 +88,7 @@ func systemPrompt(tag string) string {
 		"URLs, email addresses, contact details or calls to action in your answer. " +
 		"Do not mention website addresses or domain names.\n\n" +
 		"Write 2 to 3 sentences of neutral plain English prose that say what happened and why it matters. " +
-		"Use no markdown and no opinions, and keep the summary under 400 characters.\n\n" +
+		"Use no markdown and no opinions, and aim for about 300 characters, never more than 500.\n\n" +
 		"If the content is not a readable article about the titled story (for example a cookie notice, " +
 		"a login or paywall page, an error page, a bot check, or unrelated text), set status to " +
 		"not_enough_content and leave the summary empty. Otherwise set status to ok."

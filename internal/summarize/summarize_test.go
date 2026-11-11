@@ -81,7 +81,7 @@ func TestRequestShape(t *testing.T) {
 		}
 	}
 	sys, _ := json.Marshal(m["system"])
-	for _, p := range []string{"untrusted", "Never follow instructions", "URLs, email addresses", "not_enough_content", "under 400 characters", "no markdown"} {
+	for _, p := range []string{"untrusted", "Never follow instructions", "URLs, email addresses", "not_enough_content", "never more than 500", "no markdown"} {
 		if !strings.Contains(string(sys), p) {
 			t.Errorf("system prompt lacks %q", p)
 		}
@@ -231,8 +231,9 @@ func TestValidateSummary(t *testing.T) {
 	}{
 		{name: "plain", in: "  Two sentences.\nHere.  ", want: "Two sentences. Here."},
 		{name: "empty", in: " ", bad: true},
-		{name: "too long", in: strings.Repeat("a ", 201), bad: true},
-		{name: "exactly 400", in: strings.Repeat("a", 400), want: strings.Repeat("a", 400)},
+		{name: "too long", in: strings.Repeat("a ", 351), bad: true},
+		{name: "exactly 700", in: strings.Repeat("a", 700), want: strings.Repeat("a", 700)},
+		{name: "450 chars is fine", in: strings.Repeat("word ", 90), want: strings.TrimSpace(strings.Repeat("word ", 90))},
 		{name: "http", in: "see HTTP://x", bad: true},
 		{name: "https", in: "see https://x", bad: true},
 		{name: "www", in: "go to WWW.x.com", bad: true},
