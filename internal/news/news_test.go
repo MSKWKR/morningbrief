@@ -31,7 +31,9 @@ type fakeLister struct {
 	err   error
 }
 
-func (f fakeLister) Select(context.Context, int, int) ([]hn.Item, error) { return f.items, f.err }
+func (f fakeLister) Select(context.Context, hn.SelectOptions) ([]hn.Item, error) {
+	return f.items, f.err
+}
 
 type fakeFetcher struct {
 	mu    sync.Mutex

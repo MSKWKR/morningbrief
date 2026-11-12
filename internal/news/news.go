@@ -25,7 +25,7 @@ import (
 
 // Lister selects the stories to show.
 type Lister interface {
-	Select(ctx context.Context, scan, want int) ([]hn.Item, error)
+	Select(ctx context.Context, opts hn.SelectOptions) ([]hn.Item, error)
 }
 
 // TextFetcher returns the readable text of a page.
@@ -39,8 +39,14 @@ type Summarizer interface {
 }
 
 const (
-	scanStories  = 30
-	wantStories  = 10
+	// Selection: the best-scoring stories submitted in the last 24h. There is
+	// deliberately no minimum score: a slow day should give lower-scoring
+	// stories, not an empty section. See hn.Client.Select for why a 24h window
+	// (the job's own period) also prevents repeats across days.
+	scanStories = 60
+	wantStories = 5
+	maxStoryAge = 24 * time.Hour
+
 	maxTextRunes = 12000
 	maxTitle     = 300
 	minWords     = 150
@@ -70,7 +76,7 @@ func (p Pipeline) Run(ctx context.Context) ([]report.NewsItem, error) {
 		logf = log.Printf
 	}
 
-	stories, err := p.Lister.Select(ctx, scanStories, wantStories)
+	stories, err := p.Lister.Select(ctx, hn.SelectOptions{Scan: scanStories, Want: wantStories, MaxAge: maxStoryAge})
 	if err != nil {
 		logf("news: select: %v", err)
 		return nil, &UnavailableError{Reason: "Hacker News unreachable"}
