@@ -8,7 +8,7 @@ import (
 )
 
 // newsTitle is the Section title Compose looks for to decide on the footer.
-const newsTitle = "Tech news"
+const newsTitle = "Miscellaneous"
 
 // NewsItem is one story. Every field may come from untrusted sources (HN
 // submitters, LLM output), so it is only ever rendered through html/template.
@@ -46,7 +46,7 @@ func NewsSection(items []NewsItem) (Section, error) {
 
 // NewsUnavailableSection is the one-line note shown when news failed entirely.
 func NewsUnavailableSection(reason string) Section {
-	msg := "Tech news unavailable today (" + reason + ")"
+	msg := "Miscellaneous news unavailable today (" + reason + ")"
 	var hb bytes.Buffer
 	// The template is static and takes a string, so Execute cannot fail here.
 	_ = unavailTmpl.Execute(&hb, msg)

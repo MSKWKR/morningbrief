@@ -74,21 +74,21 @@ func TestNewsSectionText(t *testing.T) {
 	if s.Text != want {
 		t.Errorf("text mismatch:\n got %q\nwant %q", s.Text, want)
 	}
-	if s.Title != "Tech news" {
+	if s.Title != "Miscellaneous" {
 		t.Errorf("title = %q", s.Title)
 	}
 }
 
 func TestNewsUnavailableSection(t *testing.T) {
 	s := NewsUnavailableSection("API <b>error</b> 401")
-	if s.Title != "Tech news" {
+	if s.Title != "Miscellaneous" {
 		t.Errorf("title = %q", s.Title)
 	}
-	if !strings.Contains(s.Text, "Tech news unavailable today (API <b>error</b> 401)") {
+	if !strings.Contains(s.Text, "Miscellaneous news unavailable today (API <b>error</b> 401)") {
 		t.Errorf("text = %q", s.Text)
 	}
 	h := string(s.HTML)
-	if strings.Contains(h, "<b>") || !strings.Contains(h, "Tech news unavailable today (API &lt;b&gt;error&lt;/b&gt; 401)") {
+	if strings.Contains(h, "<b>") || !strings.Contains(h, "Miscellaneous news unavailable today (API &lt;b&gt;error&lt;/b&gt; 401)") {
 		t.Errorf("reason not escaped: %s", h)
 	}
 }
