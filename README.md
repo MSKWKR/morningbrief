@@ -39,10 +39,15 @@ go run ./cmd/morningbrief -dry-run -news-fixture testdata/news-fixture.json   # 
 go test ./...
 ```
 
-## Tech news & safety
+## Miscellaneous (Hacker News) & safety
 
-The email gets a "Tech news" section: the top Hacker News stories, each
-summarized in 2-3 sentences. Fetched web pages are untrusted, so:
+The email gets a "Miscellaneous" section: up to 5 Hacker News stories, each
+summarized in 1-2 factual sentences (no commentary). Stories are chosen from the top 60: the
+best-scoring ones submitted in the last 24 hours that do not look like a
+resubmitted old article (a "(2013)" tag in the title, or an old date in the
+URL). There is no minimum score, so a slow day still gives a full section.
+Because the job runs every 24 hours, a story is never included twice, and
+nothing is stored to track that. Fetched web pages are untrusted, so:
 
 - Stories are fetched sequentially with the User-Agent
   `morningbrief/0.1 (personal news digest)`, honouring robots.txt.
@@ -52,7 +57,7 @@ summarized in 2-3 sentences. Fetched web pages are untrusted, so:
 - The model has no tools and gets one call per article.
 - Links in the email come only from HN data, never from the model.
 - Failure tiers: one failing story shows its title and link only; if news as a
-  whole fails, the email says "Tech news unavailable today (reason)". The weather
+  whole fails, the email says "Miscellaneous news unavailable today (reason)". The weather
   email is still sent, then the process exits 1 so cron notices. Weather
   failures still fail fast, before any news work.
 - The whole news step has a 15-minute deadline.

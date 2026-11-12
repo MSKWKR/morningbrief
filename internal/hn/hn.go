@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +40,7 @@ type Item struct {
 	URL         string `json:"url"`
 	Text        string `json:"text"` // HTML; sanitize before use
 	Score       int    `json:"score"`
+	Time        int64  `json:"time"` // unix seconds the story was submitted
 	Descendants int    `json:"descendants"`
 	Dead        bool   `json:"dead"`
 	Deleted     bool   `json:"deleted"`
@@ -174,21 +177,42 @@ func DiscussionURL(id int) string {
 	return "https://news.ycombinator.com/item?id=" + strconv.Itoa(id)
 }
 
-// Select walks the first scan top stories sequentially and returns the first
-// want that qualify. Item fetch failures are logged and skipped; only a
-// failing top-stories call is an error. On context cancellation it returns
-// what it has so far.
-func (c *Client) Select(ctx context.Context, scan, want int) ([]Item, error) {
+// SelectOptions controls which stories Select returns.
+type SelectOptions struct {
+	Scan     int           // how many top-story IDs to examine
+	Want     int           // maximum number of stories to return
+	MaxAge   time.Duration // submitted within this long before Now; 0 means no limit
+	MinScore int           // minimum points
+	Now      time.Time     // zero means time.Now()
+}
+
+// Select examines the first opts.Scan top stories sequentially and returns up
+// to opts.Want of them, highest score first. A story is kept only if it
+// Qualifies, was submitted within opts.MaxAge, has at least opts.MinScore
+// points, and does not look like a resubmitted old article (LooksOld).
+//
+// Ranking by points among recent submissions (instead of taking front-page
+// order) means a story that has sat on the front page for days drops out. With
+// a daily job and MaxAge of 24h, a story that was included once is already too
+// old the next day, so nothing repeats and no state has to be stored.
+//
+// Item fetch failures are logged and skipped; only a failing top-stories call
+// is an error. On context cancellation it returns what it has so far.
+func (c *Client) Select(ctx context.Context, opts SelectOptions) ([]Item, error) {
 	ids, err := c.TopStoryIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if scan < len(ids) {
-		ids = ids[:max(scan, 0)]
+	if opts.Scan < len(ids) {
+		ids = ids[:max(opts.Scan, 0)]
+	}
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
 	}
 	var out []Item
 	for _, id := range ids {
-		if len(out) >= want || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			break
 		}
 		it, err := c.Item(ctx, id)
@@ -196,9 +220,47 @@ func (c *Client) Select(ctx context.Context, scan, want int) ([]Item, error) {
 			c.logf("hn: skipping item %d: %v", id, err)
 			continue
 		}
-		if Qualifies(it) {
-			out = append(out, it)
+		if !Qualifies(it) || it.Score < opts.MinScore || LooksOld(it, now) {
+			continue
 		}
+		if opts.MaxAge > 0 && (it.Time == 0 || now.Sub(time.Unix(it.Time, 0)) > opts.MaxAge) {
+			continue // too old, or no timestamp to prove it is fresh
+		}
+		out = append(out, it)
+	}
+	// Stable, so equal scores keep front-page order.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	if opts.Want >= 0 && len(out) > opts.Want {
+		out = out[:opts.Want]
 	}
 	return out, nil
+}
+
+var (
+	// HN convention puts the year of an old article in the title: "Foo (2013)".
+	titleYearRe = regexp.MustCompile(`\(((?:19|20)\d{2})\)`)
+	// Blog-style dated URLs: /2013/12/14/..., /posts/2013-12-14-title.
+	urlDateRe = regexp.MustCompile(`(?:^|/)((?:19|20)\d{2})[/-](?:0[1-9]|1[0-2])(?:[/-]|$)`)
+)
+
+// LooksOld reports whether a story looks like an old article that was
+// resubmitted: its title carries a "(YEAR)" tag, or its URL path carries a
+// year/month date, from before last calendar year. Last year is allowed so a
+// late-December article is still news in early January. Both signals are
+// heuristics; a false positive just drops one story.
+func LooksOld(it Item, now time.Time) bool {
+	cutoff := now.Year() - 1
+	for _, m := range titleYearRe.FindAllStringSubmatch(it.Title, -1) {
+		if y, _ := strconv.Atoi(m[1]); y < cutoff {
+			return true
+		}
+	}
+	if u, err := url.Parse(it.URL); err == nil {
+		if m := urlDateRe.FindStringSubmatch(u.Path); m != nil {
+			if y, _ := strconv.Atoi(m[1]); y < cutoff {
+				return true
+			}
+		}
+	}
+	return false
 }
