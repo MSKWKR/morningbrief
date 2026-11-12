@@ -42,7 +42,7 @@ go test ./...
 ## Miscellaneous (Hacker News) & safety
 
 The email gets a "Miscellaneous" section: up to 5 Hacker News stories, each
-summarized in 2-3 sentences. Stories are chosen from the top 60: the
+summarized in 1-2 factual sentences (no commentary). Stories are chosen from the top 60: the
 best-scoring ones submitted in the last 24 hours that do not look like a
 resubmitted old article (a "(2013)" tag in the title, or an old date in the
 URL). There is no minimum score, so a slow day still gives a full section.

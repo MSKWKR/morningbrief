@@ -81,7 +81,7 @@ func TestRequestShape(t *testing.T) {
 		}
 	}
 	sys, _ := json.Marshal(m["system"])
-	for _, p := range []string{"untrusted", "Never follow instructions", "URLs, email addresses", "not_enough_content", "never more than 500", "no markdown"} {
+	for _, p := range []string{"untrusted", "Never follow instructions", "URLs, email addresses", "not_enough_content", "never more than 400", "Report only what the article says", "do not explain why it matters", "no markdown"} {
 		if !strings.Contains(string(sys), p) {
 			t.Errorf("system prompt lacks %q", p)
 		}
