@@ -22,7 +22,7 @@ compare today with earlier days, and email a "what to wear" brief via Gmail.
 | `RETENTION_DAYS` | `30` | older files are deleted each run |
 | `GMAIL_USER` / `GMAIL_APP_PASSWORD` | – | required to send |
 | `MAIL_TO` | `GMAIL_USER` | comma list |
-| `ANTHROPIC_API_KEY` | – | optional; without it news is skipped with a note (exit 1 after sending) |
+| `ANTHROPIC_API_KEY` | – | optional; only the Miscellaneous (Hacker News) section needs it. Without it that section is skipped with a note (exit 1 after sending) |
 | `NEWS_MODEL` | `claude-haiku-5-5` | model used to summarize each article |
 
 CWA forecasts go down to district level only, so 葫洲里 → 內湖區.
@@ -34,14 +34,36 @@ go run ./cmd/morningbrief -dry-run                       # print, don't send
 go run ./cmd/morningbrief -dry-run -district 大安區       # one-off district
 go run ./cmd/morningbrief -dry-run -district 內湖區 \
    -fixture testdata/F-D0047-061-2026-11-04.json -date 2026-11-04   # offline (fake data)
-go run ./cmd/morningbrief -dry-run -no-news              # weather only
-go run ./cmd/morningbrief -dry-run -news-fixture testdata/news-fixture.json   # fake news, no network or API key
+go run ./cmd/morningbrief -dry-run -no-news              # weather only (no news sections)
+go run ./cmd/morningbrief -dry-run -news-fixture testdata/news-fixture.json   # fake Miscellaneous section; Cybersecurity and Markets are skipped, so no network or API key
 go test ./...
 ```
 
-## Miscellaneous (Hacker News) & safety
+## News sections
 
-The email gets a "Miscellaneous" section: up to 5 Hacker News stories, each
+After the weather the email has three news sections. Each one fails on its
+own: a section that cannot be built shows a one-line "unavailable" note, the
+rest are unaffected, and the process exits 1 after the mail is sent so cron
+notices. Weather failures still fail fast, before any news work. Items from
+the feeds are never shown twice: the job runs every 24 hours and only items
+from the last 24 hours are used, so nothing needs to be stored to track it.
+
+**Cybersecurity**
+- New vulnerabilities CISA added to its Known Exploited Vulnerabilities list
+  that day (those with known ransomware use first), each linked to NVD.
+- Recent headlines from The Hacker News and Krebs on Security.
+
+**Markets** (the news behind VOO, CIBR and XBI)
+- Recent headlines from MarketWatch, CNBC Tech, STAT and BioPharma Dive.
+
+These two sections use no language model. A feed item is its headline plus the
+feed's own short excerpt, so paywalled or bot-blocking article pages are never
+fetched. The feed list and per-feed limits are at the top of
+`cmd/morningbrief/sections.go`.
+
+**Miscellaneous** (Hacker News, summarized with Claude)
+
+Up to 5 Hacker News stories, each
 summarized in 1-2 factual sentences (no commentary). Stories are chosen from the top 60: the
 best-scoring ones submitted in the last 24 hours that do not look like a
 resubmitted old article (a "(2013)" tag in the title, or an old date in the
@@ -49,17 +71,20 @@ URL). There is no minimum score, so a slow day still gives a full section.
 Because the job runs every 24 hours, a story is never included twice, and
 nothing is stored to track that. Fetched web pages are untrusted, so:
 
-- Stories are fetched sequentially with the User-Agent
-  `morningbrief/0.1 (personal news digest)`, honouring robots.txt.
+- Everything is fetched sequentially with the User-Agent
+  `morningbrief/0.1 (personal news digest)`, honouring robots.txt (feeds and
+  articles alike). Sources whose robots.txt or bot protection says no are left
+  out rather than worked around.
 - SSRF guard: private, loopback and link-local IPs are blocked at dial time,
   only ports 80/443 are allowed, and proxies are not used.
 - `internal/sanitize` is the only path from fetched text to the model.
 - The model has no tools and gets one call per article.
 - Links in the email come only from HN data, never from the model.
-- Failure tiers: one failing story shows its title and link only; if news as a
-  whole fails, the email says "Miscellaneous news unavailable today (reason)". The weather
-  email is still sent, then the process exits 1 so cron notices. Weather
-  failures still fail fast, before any news work.
+- A failing story shows its title and link only; if the whole section fails the
+  email says "Miscellaneous news unavailable today (reason)".
+- Feed text is untrusted too, even though no model reads it: it goes through
+  the same sanitizer, is length-capped, rendered HTML-escaped, and links must be
+  http(s).
 - The whole news step has a 15-minute deadline.
 
 ## Deploy on TrueNAS
@@ -90,10 +115,12 @@ data/臺北市內湖區/raw/2026-11-04.json    raw CWA response
 - `internal/weather` raw forecast → DaySummary
 - `internal/store` per-day JSON + retention
 - `internal/advice` clothing rules + comparison
-- `internal/report` email sections (weather and tech news)
+- `internal/report` email sections (weather, news, themed sections)
 - `internal/mailer` Gmail SMTP
 - `internal/hn` Hacker News top-stories client
-- `internal/fetch` SSRF-hardened article fetcher + readable-text extraction
+- `internal/fetch` SSRF-hardened fetcher for article text, feeds and JSON
 - `internal/sanitize` cleans fetched text before it reaches the model
 - `internal/summarize` Claude API client, one call per article
 - `internal/news` pipeline tying the above together (+ fixture loader)
+- `internal/feed` RSS/Atom parser
+- `internal/digest` feed headlines and the CISA KEV list, sanitized
