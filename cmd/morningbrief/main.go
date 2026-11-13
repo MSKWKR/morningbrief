@@ -118,8 +118,8 @@ func main() {
 	fixture := flag.String("fixture", "", "read the CWA response from this file instead of calling the API")
 	dateFlag := flag.String("date", "", "pretend today is YYYY-MM-DD (for testing)")
 	htmlOut := flag.String("html-out", "", "with -dry-run, also write the HTML email to this file")
-	noNews := flag.Bool("no-news", false, "skip the tech news section entirely")
-	newsFixture := flag.String("news-fixture", "", "read tech news items from this file instead of Hacker News and the API")
+	noNews := flag.Bool("no-news", false, "skip every news section (Cybersecurity, Markets, Miscellaneous)")
+	newsFixture := flag.String("news-fixture", "", "read the Miscellaneous (Hacker News) items from this file; the Cybersecurity and Markets sections are skipped so nothing touches the network")
 	flag.Parse()
 
 	if err := run(*district, *dryRun, *fixture, *dateFlag, *htmlOut, *noNews, *newsFixture); err != nil {
@@ -158,15 +158,32 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string, no
 	}
 
 	// News is best-effort: it is built only after the weather succeeded, and
-	// whatever goes wrong here must not stop the weather email.
-	var newsReason string // non-empty when the news section was unavailable
+	// whatever goes wrong here must not stop the weather email. failures lists
+	// the sections that were unavailable, so the process can exit 1 afterwards.
+	var failures []string
 	if !noNews {
+		if newsFixture == "" {
+			// Cybersecurity and Markets come from public feeds; the fetcher
+			// honours robots.txt and refuses private addresses.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			f := fetch.New()
+			now := time.Now()
+			for _, t := range []themed{buildCyber(ctx, f, now), buildMarkets(ctx, f, now)} {
+				sections = append(sections, t.sec)
+				if t.failure != "" {
+					failures = append(failures, t.failure)
+				}
+			}
+			cancel()
+		}
 		sec, reason, err := buildNews(cfg, newsFixture)
 		if err != nil {
 			return err
 		}
 		sections = append(sections, sec)
-		newsReason = reason
+		if reason != "" {
+			failures = append(failures, "Miscellaneous: "+reason)
+		}
 	}
 
 	subject := fmt.Sprintf("Morning brief %s · %s", today.Format("01/02 Mon"), headlines[0])
@@ -184,7 +201,7 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string, no
 				return err
 			}
 		}
-		return newsUnavailable(newsReason)
+		return newsUnavailable(failures)
 	}
 	if cfg.gmailUser == "" || cfg.gmailPass == "" {
 		return fmt.Errorf("GMAIL_USER and GMAIL_APP_PASSWORD must be set (or use -dry-run)")
@@ -195,16 +212,17 @@ func run(districtFlag string, dryRun bool, fixture, dateFlag, htmlOut string, no
 	}
 	recipients := strings.Join(cfg.mailTo, ", ")
 	log.Printf("sent to %s", recipients)
-	return newsUnavailable(newsReason)
+	return newsUnavailable(failures)
 }
 
-// newsUnavailable turns a missing news section into an error. It is returned
-// only after the mail is sent (or printed), so main exits 1 and cron notices.
-func newsUnavailable(reason string) error {
-	if reason == "" {
+// newsUnavailable turns unavailable news sections into an error. It is
+// returned only after the mail is sent (or printed), so main exits 1 and cron
+// notices.
+func newsUnavailable(failures []string) error {
+	if len(failures) == 0 {
 		return nil
 	}
-	return fmt.Errorf("news unavailable: %s", reason)
+	return fmt.Errorf("news unavailable: %s", strings.Join(failures, "; "))
 }
 
 // buildNews returns the news section. If news could not be produced it returns
