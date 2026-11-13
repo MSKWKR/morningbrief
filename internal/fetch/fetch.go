@@ -9,8 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"mime"
 	"net"
 	"net/http"
 	"net/netip"
@@ -117,34 +115,42 @@ func validateURL(u *url.URL) error {
 // Text fetches rawURL and returns its raw extracted text. Sanitizing is the
 // caller's job.
 func (f *Fetcher) Text(ctx context.Context, rawURL string) (string, error) {
+	return do(ctx, f, rawURL, f.attempt)
+}
+
+// do validates rawURL, checks robots.txt, then runs attempt, retrying once
+// after retryDelay if the failure looks transient. It is shared by every kind
+// of fetch so they all get the same URL, robots and retry rules.
+func do[T any](ctx context.Context, f *Fetcher, rawURL string, attempt func(context.Context, *url.URL) (T, error)) (T, error) {
+	var zero T
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("%w: unparsable", errBadURL)
+		return zero, fmt.Errorf("%w: unparsable", errBadURL)
 	}
 	if err := validateURL(u); err != nil {
-		return "", err
+		return zero, err
 	}
 	ok, err := f.allowed(ctx, u)
 	if err != nil {
-		return "", err
+		return zero, err
 	}
 	if !ok {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return zero, ctx.Err()
 		}
-		return "", ErrDisallowedByRobots
+		return zero, ErrDisallowedByRobots
 	}
 
-	text, err := f.attempt(ctx, u)
+	res, err := attempt(ctx, u)
 	if err == nil || !transient(err) {
-		return text, err
+		return res, err
 	}
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return zero, ctx.Err()
 	case <-time.After(f.retryDelay):
 	}
-	return f.attempt(ctx, u)
+	return attempt(ctx, u)
 }
 
 // transient reports whether err merits the single retry.
@@ -163,47 +169,17 @@ func transient(err error) bool {
 }
 
 func (f *Fetcher) attempt(ctx context.Context, u *url.URL) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, f.timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", errBadURL, err)
-	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	// Accept-Encoding is deliberately unset so Go decompresses transparently
-	// and the size cap below bounds the decompressed bytes.
-
-	resp, err := f.client.Do(req)
+	data, ct, final, err := f.getBody(ctx, u, "text/html,application/xhtml+xml",
+		func(mt string) bool { return mt == "text/html" || mt == "application/xhtml+xml" })
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", &StatusError{Code: resp.StatusCode}
-	}
-	ct := resp.Header.Get("Content-Type")
-	mt, _, err := mime.ParseMediaType(ct)
-	if err != nil || (mt != "text/html" && mt != "application/xhtml+xml") {
-		return "", fmt.Errorf("%w: %q", ErrContentType, mt)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
-	if err != nil {
-		return "", err
-	}
-	if len(data) > maxBodyBytes {
-		return "", ErrTooLarge
-	}
-
 	r, err := charset.NewReader(bytes.NewReader(data), ct)
 	if err != nil {
 		return "", fmt.Errorf("fetch: charset: %w", err)
 	}
 	// Use the final URL (after redirects) for resolving relative links.
-	article, err := readability.FromReader(r, resp.Request.URL)
+	article, err := readability.FromReader(r, final)
 	if err != nil {
 		return "", fmt.Errorf("fetch: extract: %w", err)
 	}
