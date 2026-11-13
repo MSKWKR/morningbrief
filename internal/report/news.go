@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// newsTitle is the Section title Compose looks for to decide on the footer.
+// newsTitle is the title of the Hacker News section.
 const newsTitle = "Miscellaneous"
 
 // NewsItem is one story. Every field may come from untrusted sources (HN
@@ -41,7 +41,7 @@ func NewsSection(items []NewsItem) (Section, error) {
 	if err := newsTmpl.Execute(&hb, items); err != nil {
 		return Section{}, err
 	}
-	return Section{Title: newsTitle, Text: tb.String(), HTML: template.HTML(hb.String())}, nil
+	return Section{Title: newsTitle, Text: tb.String(), HTML: template.HTML(hb.String()), Sources: []string{"Hacker News"}}, nil
 }
 
 // NewsUnavailableSection is the one-line note shown when news failed entirely.
@@ -50,7 +50,7 @@ func NewsUnavailableSection(reason string) Section {
 	var hb bytes.Buffer
 	// The template is static and takes a string, so Execute cannot fail here.
 	_ = unavailTmpl.Execute(&hb, msg)
-	return Section{Title: newsTitle, Text: msg + "\n", HTML: template.HTML(hb.String())}
+	return Section{Title: newsTitle, Text: msg + "\n", HTML: template.HTML(hb.String()), Sources: []string{"Hacker News"}}
 }
 
 var newsTmpl = template.Must(template.New("n").Parse(`

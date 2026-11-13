@@ -15,9 +15,10 @@ import (
 )
 
 type Section struct {
-	Title string
-	Text  string        // plain-text body
-	HTML  template.HTML // HTML body (already safe)
+	Title   string
+	Text    string        // plain-text body
+	HTML    template.HTML // HTML body (already safe)
+	Sources []string      // data sources to credit in the footer, if any
 }
 
 type Email struct {
@@ -75,13 +76,17 @@ func Compose(subject string, sections []Section) (Email, error) {
 		tb.WriteString("== " + s.Title + " ==\n" + s.Text + "\n")
 	}
 	var hb bytes.Buffer
-	hasNews := false
+	var sources []string
+	seen := map[string]bool{}
 	for _, s := range sections {
-		if s.Title == newsTitle {
-			hasNews = true
+		for _, src := range s.Sources {
+			if !seen[src] {
+				seen[src] = true
+				sources = append(sources, src)
+			}
 		}
 	}
-	if err := pageTmpl.Execute(&hb, map[string]any{"Subject": subject, "Sections": sections, "HasNews": hasNews}); err != nil {
+	if err := pageTmpl.Execute(&hb, map[string]any{"Subject": subject, "Sections": sections, "Sources": sources}); err != nil {
 		return Email{}, err
 	}
 	return Email{Subject: subject, Text: tb.String(), HTML: hb.String()}, nil
@@ -123,5 +128,5 @@ var pageTmpl = template.Must(template.New("p").Parse(`<!DOCTYPE html>
 <body style="font-family:-apple-system,'Segoe UI','Noto Sans TC',sans-serif;color:#222;max-width:640px;margin:0 auto;padding:16px">
 {{range .Sections}}<h2 style="font-size:18px;border-bottom:1px solid #ddd;padding-bottom:4px">{{.Title}}</h2>
 {{.HTML}}{{end}}
-<p style="margin-top:24px;font-size:12px;color:#999">{{if .HasNews}}Sources: 中央氣象署 Open Data (F-D0047) · Hacker News{{else}}Source: 中央氣象署 Open Data (F-D0047){{end}}</p>
+<p style="margin-top:24px;font-size:12px;color:#999">{{if .Sources}}Sources: 中央氣象署 Open Data (F-D0047){{range .Sources}} · {{.}}{{end}}{{else}}Source: 中央氣象署 Open Data (F-D0047){{end}}</p>
 </body></html>`))
